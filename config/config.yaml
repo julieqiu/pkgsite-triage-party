@@ -1,4 +1,4 @@
-# Copyright 2020 Google Inc.
+# Copyright 2021 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,521 +13,145 @@
 # limitations under the License.
 ---
 settings:
-  name: generic-project
-  # On a scale of 0-1, how similar do two issues need to be to be tagged as "similar"
-  min_similarity: 0.75
-  # Repositories to query, can be overridden by -repos
+  name: pkgsite
+  min_similarity: 0.8
   repos:
-    - https://github.com/photoprism/photoprism
+    - https://github.com/golang/go
 
-  member-roles: []
   # Who should automatically be considered a project member?
   # See: https://developer.github.com/v4/enum/commentauthorassociation/
   # Default is "collaborator, owner, member", unless "members" is set
   #
-  # member-roles:
-  #  - collaborator
-  #  - owner
-  #  - member
-  members: []
+  #member-roles:
+  # - collaborator
+  # - owner
+  # - member
   # Who else do we consider to be a project member? Default is empty.
-  # members:
-  #  - tstromberg
+  #members:
+  # - tstromberg
 
 collections:
   - id: daily
     name: Daily Triage
-    dedup: false
-    description: To be emptied out daily
-    rules:
-      - issue-needs-comment
-      - p0-fix-overdue
-      - p0-followup-overdue
-      # Don't leave code reviews hanging
-      - pr-reviewable
-      # missing initial feedback
-      - issue-needs-kind
-      # reprioritize
-      - issue-new-with-reactions
-      - issue-new-with-many-commenters
-      # Don't forget our users
-      - issue-has-question
-      - issue-updated-kind-question
-
-  - id: weekly
-    name: Weekly Triage
     dedup: true
-    description: To be emptied out weekly
-    rules:
-      - discuss
-      # Issues needing reprioritization
-      - many-reactions
-      - many-commenters
-      # Issues needing reprioritization
-      - issue-zombies
-      # PR's needing closure
-      - pr-approved-stale
-      - pr-unapproved-stale
-      - birthday
-
-  - id: quarterly
-    name: Quarterly Scrub
-    dedup: true
-    rules:
-      - question-old
-      - bugs-old
-      - enhancement-old
-      - other-old
-
-  - id: milestone
-    name: In Milestone
     description: >
-      A Kanban visualization of milestones, showing the flow of issues through each stage.
+      queue to be emptied once a day
+    rules:
+      - issue-needs-attention
+      - issue-needs-response
+      - issue-pkgsite-waiting-for-info
 
-        * Unassigned issues represent available work
-        * >3 issues assigned to the same person within a stage signifies a bottleneck 🌊
-    display: kanban
-    overflow: 3
+  - id: next-release
+    name: Next release
     dedup: true
-    rules:
-      - milestone-not-started
-      - milestone-assignee-updated
-      - milestone-pr-needs-review
-      - milestone-pr-needs-work
-      - milestone-pr-needs-merge
-      - milestone-recently-closed
-
-  - id: recv
-    name: "Receive queue"
     description: >
-      Issues that may be waiting for our response
-
-      NOTE: for this to work properly, GitHub token must have read access to read organization members
+      issues that must be resolved for the next pkgsite release
     rules:
-      - question-recv
-      - bugs-recv
-      - enhancement-recv
-      - other-recv
+      - issue-in-next-pkgsite-release
 
-  - id: p0
-    name: P0
-    description: All hands on deck!
+  - id: golang.org-features
+    name: Golang.org Features
+    dedup: true
+    description: >
+      issues that must be resolved for pkgsite golang.org-features
     rules:
-      - p0-prs
-      - p0-features
-      - p0-bugs
-      - p0-other
+      - assigned-issue-in-golang
+      - issue-in-golang-milestone
 
-  - id: p1
-    name: P1
-    description: To be resolved within 6 weeks
+  - id: unplanned
+    name: Unplanned
+    dedup: true
+    description: >
+      unplanned work
     rules:
-      - p1-prs
-      - p1-features
-      - p1-bugs
-      - p1-other
+      - issue-in-unplanned-milestone
 
-  - id: similar
-    name: Similar
-    description: Items which appear similar to one other. Review for duplicates or vague titles.
+  - id: feature-requests
+    name: Feature Requests
+    dedup: true
+    description: >
+      features requests
     rules:
-      - similar-prs
-      - similar-issues
+      - issue-pkgsite-fr
 
-  - id: __open__
-    name: All open PR's and Issues that should be considered for repository stats (hidden)
-    used_for_statistics: true
-    hidden: true
+  - id: testing
+    name: Testing
+    dedup: true
+    description: >
+      testing work
     rules:
-      - open-prs
-      - open-issues
-
-  - id: __velocity__
-    name: issues to include in velocity metrics
-    used_for_statistics: true
-    hidden: true
-    rules:
-      - closed-milestone-issues
+      - issue-pkgsite-testing
 
 rules:
-  ### Daily Triage ####
-  issue-needs-comment:
-    name: "Unresponded, older than 7 days"
-    resolution: "Respond to the issue"
+  issue-needs-attention:
+    name: "Untriaged issues"
+    resolution: "Add to milestone"
     type: issue
     filters:
-      - tag: "!commented"
-      - tag: "recv"
-      - created: +1w
+      - label: "pkgsite"
+      - milestone: "Unreleased"
 
-  # Don't leave code reviews hanging
-  pr-reviewable:
-    name: "Pull Requests: Review Ready"
-    resolution: "Review requests or mark them as do-not-merge/work-in-progress"
-    type: pull_request
-    filters:
-      - label: "!do-not-merge.*"
-      - label: "!needs-rebase"
-      - label: "!.*wip"
-      - label: "!cncf-cla: no"
-      - tag: "!changes-requested"
-      - tag: "!send"
-      - tag: "!commented"
-
-      # Temporarily workaround inability to track PR eligibility
-      - updated: +1d
-
-  # Issues missing initial feedback
-  issue-needs-kind:
-    name: "Unkinded Issues"
-    resolution: "Add a label"
+  issue-needs-response:
+    name: "Needs response"
+    resolution: "Add to milestone"
     type: issue
     filters:
-      - label: "!.*(kind|bug|documentation|enhancement|question|todo|idea|epic).*"
-
-  # Issues that may need reprioritized
-  issue-new-with-reactions:
-    name: "New, has multiple reactions, but not p0"
-    resolution: "Check if issue should be prioritized as p0"
-    type: issue
-    filters:
-      - reactions: ">2"
-      - created: -10d
-      - tag: "!send"
-      - label: "!priority/p0"
-
-  issue-new-with-many-commenters:
-    name: "New, has multiple commenters, but not p0"
-    resolution: "Check if issue should be prioritized as p0"
-    type: issue
-    filters:
-      - commenters: ">3"
-      - created: -10d
-      - tag: "!send"
-      - label: "!priority/p0"
-
-  # People with questions
-  issue-updated-kind-question:
-    name: "question label issue not responded to for over a week"
-    resolution: "Remove question label, or add a comment"
-    type: issue
-    filters:
+      - label: "pkgsite"
+      - label: "WaitingForInfo"
+      - tag: author-last
       - tag: recv
-      - label: ".*question"
-      - tag: "!member-last"
-      - tag: "!contributor-last"
-      - responded: +8d
-
-  issue-has-question:
-    name: "Reporter asked a question over a week ago"
-    resolution: "Add an answer"
-    type: issue
-    filters:
       - tag: recv-q
-      - tag: "!member-last"
-      - tag: "!contributor-last"
-      - responded: +7d
 
-  ####### Weekly Triage #########
-  discuss:
-    name: "Items for discussion"
-    resolution: "Discuss and remove label"
-    filters:
-      - label: ".*discuss"
-      - state: "all"
-
-  # SLO nearing
-  p0-followup-overdue:
-    name: "p0 issue, no comments in 3 days"
-    resolution: "Downgrade to p1"
+  issue-pkgsite-waiting-for-info:
+    name: "Unactionable pkgsite issues"
+    resolution: "None"
     type: issue
     filters:
-      - label: "priority/p0"
-      - tag: recv
-      - responded: +3d
+      - label: "pkgsite"
+      - label: "WaitingForInfo"
 
-  p0-fix-overdue:
-    name: "p0 bug, older than 7 days"
-    resolution: "Downgrade to p1"
+  issue-in-next-pkgsite-release:
+    name: "Issues in the next release"
+    resolution: "None"
     type: issue
     filters:
-      - label: "priority/p0"
-      - created: +7d
+      - milestone: "pkgsite/v0.*"
 
-  # issues needing reprioritization
-  many-reactions:
-    name: "many reactions, low priority, no recent comment"
-    resolution: "Bump the priority, add a comment"
-    filters:
-      - reactions: ">3"
-      - reactions-per-month: ">1"
-      - label: "!priority/p0"
-      - label: "!priority/p1"
-      - responded: +60d
-
-  many-commenters:
-    name: "many commenters, low priority, no recent comment"
-    resolution: "Consider increasing priority"
+  issue-in-golang-milestone:
+    name: "Issues in the pkgsite/golang.org-features milestone"
+    resolution: "None"
     type: issue
     filters:
-      - commenters: ">3"
-      - commenters-per-month: ">1.9"
-      - created: "+30d"
-      - label: "!priority/p0"
-      - label: "!priority/p1"
-      - tag: "!member-last"
-      - responded: "+60d"
+      - milestone: "pkgsite/golang.org-features"
+      - tag: "!assigned"
 
-  issue-zombies:
-    name: "Screaming into the void"
-    resolution: "Reopen, or ask folks to open a new issue"
+  assigned-issue-in-golang:
+    name: "Assigned issues in the v1.0.0 milestone"
+    resolution: "None"
     type: issue
     filters:
-      - state: closed
-      - comments-while-closed: ">1"
-      - updated: "-14d"
-      - tag: "!member-last"
+      - milestone: "pkgsite/golang.org-features"
+      - tag: "assigned"
 
-  # Issues needing closure
-  birthday:
-    name: "Forgotten Birthdays - over a year old, no response in 6 months"
-    resolution: "Close or comment on what it would take to address this issue"
-    filters:
-      - created: +365d
-      - responded: +180d
-
-  # PR's needing closure
-  pr-approved-stale:
-    name: "Pull requests: Approved and getting old"
-    type: pull_request
-    filters:
-      - label: "!do-not-merge.*"
-      - label: "!needs-rebase"
-      - label: "approved"
-      - updated: +5d
-      - responded: +2d
-
-  pr-unapproved-stale:
-    name: "Pull Requests: Stale"
-    resolution: "Add comment and/or close PR"
-    type: pull_request
-    filters:
-      - created: +20d
-      - updated: +5d
-      - responded: +2d
-
-  ## Bug Scrub ##
-  question-old:
-    name: "Questions that have been open for >3 weeks"
-    resolution: "Comment or close the issue"
+  issue-in-unplanned-milestone:
+    name: "Issues in the unplanned milestone"
+    resolution: "None"
     type: issue
     filters:
-      - responded: +7d
-      - created: +21d
-      - label: ".*question"
+      - milestone: "pkgsite/unplanned"
 
-  enhancement-old:
-    name: "Features that have been commented on within 90 days"
-    resolution: "Comment or close the issue"
+  issue-pkgsite-fr:
+    name: "pkgsite feature requests"
+    resolution: "None"
     type: issue
     filters:
-      - responded: +1d
-      - created: +1d
-      - label: ".*(feature|enhancement|idea).*"
+      - label: "pkgsite"
+      - label: "FeatureRequest"
 
-  bugs-old:
-    name: "Bugs that have not been commented on within 90 days"
-    resolution: "Comment or close the issue"
+  issue-pkgsite-testing:
+    name: "pkgsite testing issue"
+    resolution: "None"
     type: issue
     filters:
-      - label: ".*bug.*"
-      - responded: +1d
-      - created: +1d
-      - label: "!priority/awaiting-evidence"
-
-  other-old:
-    name: "Other items that have not been commented on within 90 days"
-    resolution: "Comment or close the issue"
-    type: issue
-    filters:
-      - responded: +1d
-      - created: +1d
-      - label: "!.*question"
-      - label: "!.*(feature|enhancement).*"
-      - label: "!.*bug"
-
-  # Receive queue
-  question-recv:
-    name: "Questions awaiting follow-up"
-    resolution: "Comment or close the issue"
-    type: issue
-    filters:
-      - tag: recv
-      - label: ".*question"
-
-  bugs-recv:
-    name: "Bugs awaiting follow-up"
-    resolution: "Comment or close the issue"
-    type: issue
-    filters:
-      - tag: recv
-      - label: ".*bug"
-
-  enhancement-recv:
-    name: "Features awaiting follow-up"
-    resolution: "Comment or close the issue"
-    type: issue
-    filters:
-      - tag: recv
-      - label: ".*(feature|enhancement|idea).*"
-
-  other-recv:
-    name: "Items that deserve a follow-up comment"
-    resolution: "Comment or close the issue"
-    type: issue
-    filters:
-      - tag: recv
-      - responded: +30d
-      - label: "!.*(feature|enhancement).*"
-      - label: "!.*bug"
-      - label: ".*question"
-
-  # P0
-  p0-features:
-    name: "p0 Bugs"
-    type: issue
-    resolution: Close or deprioritize
-    filters:
-      - label: "priority/p0"
-      - label: "kind/bug"
-
-  p0-bugs:
-    name: "p0 Features"
-    type: issue
-    resolution: Close or deprioritize
-    filters:
-      - label: "priority/p0"
-      - label: "kind/feature-request"
-
-  p0-other:
-    name: "p0 Other"
-    type: issue
-    resolution: Close or deprioritize
-    filters:
-      - label: "priority/p0"
-      - label: "!kind/feature-request"
-      - label: "!kind/bug"
-
-  p0-prs:
-    name: "p0 Pull Requests"
-    type: pull_request
-    resolution: Merge em
-    filters:
-      - label: "priority/p0"
-
-  # P1
-  p1-bugs:
-    name: "p1 Bugs"
-    type: issue
-    resolution: Close or deprioritize
-    filters:
-      - label: "priority/p1"
-      - label: "kind/bug"
-
-  p1-features:
-    name: "p1 Features"
-    type: issue
-    resolution: Close or deprioritize
-    filters:
-      - label: "priority/p1"
-      - label: "kind/feature-request"
-
-  p1-other:
-    name: "p1 Other"
-    type: issue
-    resolution: Close or deprioritize
-    filters:
-      - label: "priority/p1"
-      - label: "!kind/feature-request"
-      - label: "!kind/bug"
-
-  p1-prs:
-    name: "p1 Pull Requests"
-    type: pull_request
-    resolution: Merge em
-    filters:
-      - label: "priority/p1"
-
-  ## Similar
-  similar-prs:
-    name: "Similar Pull Requests"
-    type: pull_request
-    resolution: Close as duplicate or give a better title
-    filters:
-      - tag: similar
-
-  similar-issues:
-    name: "Similar Issues"
-    type: issue
-    resolution: Close as duplicate or give a better title
-    filters:
-      - tag: similar
-
-  ### Milestone Kanban ###
-  milestone-not-started:
-    name: "Not started"
-    type: issue
-    filters:
-      - tag: open-milestone
-      - tag: "!assignee-updated"
-      - tag: "!(assignee-open-pr|assignee-closed-pr)"
-  milestone-assignee-updated:
-    name: "In Progress"
-    type: issue
-    filters:
-      - tag: open-milestone
-      - tag: "assignee-updated"
-      - tag: "!(pr-changes-requested|pr-reviewer-comment|pr-unreviewed|pr-new-commits|pr-approved|pr-changes-requested)"
-  milestone-pr-needs-work:
-    name: "PR needs work"
-    type: issue
-    filters:
-      - tag: open-milestone
-      - tag: "(pr-changes-requested|pr-reviewer-comment)"
-  milestone-pr-needs-review:
-    name: "PR needs Review"
-    type: issue
-    filters:
-      - tag: open-milestone
-      - tag: "(pr-unreviewed|pr-new-commits)"
-  milestone-pr-needs-merge:
-    name: "PR needs Merge"
-    type: issue
-    filters:
-      - tag: open-milestone
-      - tag: "(pr-approved|pr-approved-but-pushed)"
-  milestone-recently-closed:
-    name: "Finish Line"
-    type: issue
-    filters:
-      - tag: open-milestone
-      - state: closed
-      - updated: -21d
-
-  # for statistics generation
-  open-issues:
-    name: "Open Issues"
-    type: issue
-
-  open-prs:
-    name: "Open PRs"
-    type: pull_request
-
-  closed-milestone-issues:
-    name: "Recently closed milestone issues"
-    type: issue
-    filters:
-      - state: closed
-      - closed: -90d
-      - milestone: ".*"
-      - label: "!triage/duplicate"
+      - label: "pkgsite"
+      - label: "Testing"
